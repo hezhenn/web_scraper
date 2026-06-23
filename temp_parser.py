@@ -184,8 +184,8 @@ def parse_hdd_block_prices(product_soup: Tag) -> dict[str, float]:
         driver = get_driver()
         driver.get(absolute_url)
 
-        swatches - driver.find_element(By.CLASS_NAME, "swatches")
-        buttons = driver.find_elements(By.TAG_NAME, "button")
+        swatches = driver.find_element(By.CLASS_NAME, "swatches")
+        buttons = swatches.find_elements(By.TAG_NAME, "button")
 
         prices = {}
 

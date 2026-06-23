@@ -98,10 +98,31 @@ def get_laptop_page_products() -> list[Product]:
         )
         response.raise_for_status()
 
-        soup = BeautifulSoup(response.content, 'html.parser')
-        products = soup.select(".card-body")
+        first_page_soup = BeautifulSoup(response.content, 'html.parser')
 
-        return [parse_single_product(product) for product in products]
+        all_products = get_single_page_products(first_page_soup)
+
+        num_pages = get_num_pages(first_page_soup)
+        print(f"Number of pages with products: {num_pages} ")
+        print(f"Processing page 1 of {num_pages}")
+
+        for page_num in range(2, num_pages + 1):
+            print(f"Editing the page {page_num} with {num_pages}")
+
+            response = session.get(
+                LAPTOP_URL,
+                headers=HEADERS,
+                params={"page": page_num},
+                timeout=10,
+                verify=True
+            )
+            response.raise_for_status()
+
+            next_page_soup = BeautifulSoup(response.content, 'html.parser')
+            all_products.extend(get_single_page_products(next_page_soup))
+
+        print(f"Number of items: {len(all_products)}")
+        return all_products
 
     except requests.exceptions.RequestException as e:
         print(f"❌ Error while executing the query: {e}")
@@ -109,6 +130,20 @@ def get_laptop_page_products() -> list[Product]:
     except Exception as e:
         print(f"⚠️ Unexpected error: {e}")
         return None
+
+def get_num_pages(page_soup: Tag) -> int:
+
+    pagination = page_soup.select_one(".pagination")
+
+    if pagination is None:
+        return 0
+
+    return int(pagination.select("li")[-2].text)
+
+def get_single_page_products(page_soup: Tag) -> list[Product]:
+
+    products = page_soup.select(".card-body")
+    return [parse_single_product(product) for product in products]
 
 def write_products_to_csv(products: list[Product]) -> None:
 

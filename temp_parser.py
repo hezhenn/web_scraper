@@ -1,9 +1,19 @@
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from urllib.parse import urljoin
 from fake_useragent import UserAgent
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
+from dataclasses import dataclass
+
+@dataclass
+class Product:
+    title: str
+    description: str
+    price: float
+    rating: int
+    num_of_reviews: int
+
 
 user_agent = UserAgent()
 
@@ -40,7 +50,7 @@ HEADERS = {
     'Upgrade-Insecure-Requests': '1',
 }
 
-def get_home_products():
+def get_home_products() -> list[Product]:
     try:
         response = session.get(
             HOME_URL,
@@ -55,9 +65,9 @@ def get_home_products():
         headers["User-Agent"] = user_agent.random
 
         soup = BeautifulSoup(response.content, 'html.parser')
+        products = soup.select(".card-body")
 
-        print(soup.prettify())
-        return soup
+        return [parse_single_product(product) for product in products]
 
     except requests.exceptions.RequestException as e:
         print(f"❌ Error while executing the query: {e}")
@@ -66,10 +76,26 @@ def get_home_products():
         print(f"⚠️ Unexpected error: {e}")
         return None
 
+def parse_single_product(product: Tag) -> Product:
+    return Product(
+        title = product.select_one(".title")["title"],
+        description = product.select_one(".description").text,
+        price = float(product.select_one(".price").text.replace("$", "")),
+        rating = int(product.select_one("[data-rating]")["data-rating"]),
+        num_of_reviews = int(product.select_one(".review-count").text.split()[0])
+    )
+
 def main():
     try:
-        soup = get_home_products()
-        return soup
+        products = get_home_products()
+
+        if products:
+            print("✅ The data has been successfully received and processed!\n")
+
+            for index, product in enumerate(products, 1):
+                print(f"{index}. {product}")
+        else:
+            print("❌ Unable to retrieve data. Please check your connection or try again later.")
 
     except KeyboardInterrupt:
         print("\n🛑 The user has terminated the program")
@@ -77,6 +103,7 @@ def main():
         print(f"❌ Critical error: {e}")
     finally:
         session.close()
+
 
 if __name__ == "__main__":
     main()

@@ -8,6 +8,9 @@ from fake_useragent import UserAgent
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from dataclasses import dataclass, fields, astuple
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,8 +28,21 @@ class Product:
     price: float
     rating: int
     num_of_reviews: int
+    additional_info: dict[str, float]
 
 PRODUCT_FIELDS = [field.name for field in fields(Product)]
+
+_driver: webdriver.WebDriver | None = None
+
+
+def get_driver() -> webdriver.Chrome:
+    return _driver
+
+
+def set_driver(new_driver: webdriver.WebDriver) -> None:
+    global _driver
+    _driver = new_driver
+
 
 user_agent = UserAgent()
 
@@ -91,12 +107,16 @@ def get_home_products() -> list[Product]:
         return None
 
 def parse_single_product(product: Tag) -> Product:
+
+    hdd_prices = parse_hdd_block_prices(product)
+
     return Product(
         title = product.select_one(".title")["title"],
         description = product.select_one(".description").text,
         price = float(product.select_one(".price").text.replace("$", "")),
         rating = int(product.select_one("[data-rating]")["data-rating"]),
-        num_of_reviews = int(product.select_one(".review-count").text.split()[0])
+        num_of_reviews = int(product.select_one(".review-count").text.split()[0]),
+        additional_info = {"hdd_prices": hdd_prices}
     )
 
 def get_laptop_page_products() -> list[Product]:
@@ -156,6 +176,38 @@ def get_single_page_products(page_soup: Tag) -> list[Product]:
     products = page_soup.select(".card-body")
     return [parse_single_product(product) for product in products]
 
+def parse_hdd_block_prices(product_soup: Tag) -> dict[str, float]:
+
+    try:
+        absolute_url = urljoin(BASE_URL, product_soup.select_one(".title")["href"])
+
+        driver = get_driver()
+        driver.get(absolute_url)
+
+        swatches - driver.find_element(By.CLASS_NAME, "swatches")
+        buttons = driver.find_elements(By.TAG_NAME, "button")
+
+        prices = {}
+
+        for button in buttons:
+            if not button.get_property("disabled"):
+                button.click()
+
+                price_text = driver.find_element(By.CLASS_NAME, "price").text
+                price_value = float(price_text.replace("$", ""))
+
+                config_name = button.get_property("value")
+
+                prices[config_name] = price_value
+
+                logging.info(f"HDD Configuration '{config_name}' -> ${price_value}")
+
+        return prices
+
+    except Exception as e:
+        logging.warning(f"Error parsing HDD blocks: {e}")
+        return {}
+
 def write_products_to_csv(products: list[Product]) -> None:
 
     with open("products.csv", "w", newline="", encoding='utf-8') as f:
@@ -167,8 +219,13 @@ def write_products_to_csv(products: list[Product]) -> None:
 def main():
     try:
 
-        write_products_to_csv(get_laptop_page_products())
-        print("✅ Data successfully saved to the 'products.csv'")
+        with webdriver.Chrome() as driver:
+            set_driver(driver)
+
+            products = get_laptop_page_products()
+            write_products_to_csv(products)
+
+            logging.info(f"Successfully processed {len(products)} products with configurations")
 
     except KeyboardInterrupt:
         logging.warning("\n🛑 The user has terminated the program")
@@ -176,6 +233,7 @@ def main():
         logging.critical(f"❌ Critical error: {e}")
     finally:
         session.close()
+        logging.info("Application resources successfully released")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
 import requests
+import csv
 from bs4 import BeautifulSoup, Tag
 from urllib.parse import urljoin
 from fake_useragent import UserAgent
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, astuple
 
 @dataclass
 class Product:
@@ -14,6 +15,7 @@ class Product:
     rating: int
     num_of_reviews: int
 
+PRODUCT_FIELDS = [field.name for field in fields(Product)]
 
 user_agent = UserAgent()
 
@@ -38,6 +40,7 @@ session.mount("http://", HTTPAdapter(max_retries=retry_strategy))
 BASE_URL = "https://webscraper.io/"
 
 HOME_URL = urljoin(BASE_URL, "test-sites/e-commerce/allinone/")
+LAPTOP_URL = urljoin(BASE_URL, "test-sites/e-commerce/static/computers/laptops/")
 
 HEADERS = {
     'User-Agent': user_agent.random,
@@ -85,17 +88,41 @@ def parse_single_product(product: Tag) -> Product:
         num_of_reviews = int(product.select_one(".review-count").text.split()[0])
     )
 
+def get_laptop_page_products() -> list[Product]:
+    try:
+        response = session.get(
+            LAPTOP_URL,
+            headers=HEADERS,
+            timeout=10,
+            verify=True
+        )
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.content, 'html.parser')
+        products = soup.select(".card-body")
+
+        return [parse_single_product(product) for product in products]
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error while executing the query: {e}")
+        return None
+    except Exception as e:
+        print(f"⚠️ Unexpected error: {e}")
+        return None
+
+def write_products_to_csv(products: list[Product]) -> None:
+
+    with open("products.csv", "w", newline="", encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(PRODUCT_FIELDS)
+        writer.writerows([astuple(product) for product in products])
+
+
 def main():
     try:
-        products = get_home_products()
 
-        if products:
-            print("✅ The data has been successfully received and processed!\n")
-
-            for index, product in enumerate(products, 1):
-                print(f"{index}. {product}")
-        else:
-            print("❌ Unable to retrieve data. Please check your connection or try again later.")
+        write_products_to_csv(get_laptop_page_products())
+        print("✅ Data successfully saved to the 'products.csv'")
 
     except KeyboardInterrupt:
         print("\n🛑 The user has terminated the program")
